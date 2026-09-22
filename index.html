@@ -309,7 +309,7 @@ function vCard(){
     h+='<button class="link danger" style="align-self:center" data-a="finishRound">여기서 라운드 끝내기</button>';
     dock='<button class="btn" data-a="resume">라운드로 돌아가기</button>';
   }else{
-    if(ui.cardFrom==='history'){h+='<button class="link danger" style="align-self:center" data-a="deleteRound">이 라운드 삭제</button>';}
+    h+='<button class="link danger" style="align-self:center" data-a="deleteRound">이 라운드 삭제</button>';
     dock=ui.cardFrom==='history'?'<button class="btn" data-a="history">목록으로</button>':'<button class="btn" data-a="home">처음으로 돌아가기</button>';
   }
   return {html:h,dock:dock};
@@ -317,14 +317,18 @@ function vCard(){
 
 function vHistory(){
   var list=db.rounds.slice().sort(function(a,b){return b.date-a.date;});
-  var h='<div class="bar" style="justify-content:flex-start"><button class="icon" data-a="home" aria-label="홈으로">'+ICON.back+'</button><h1>지난 라운드</h1></div>';
+  var h='<div class="bar"><div style="display:flex;align-items:center;gap:8px"><button class="icon" data-a="home" aria-label="홈으로">'+ICON.back+'</button><h1>지난 라운드</h1></div>'+
+    (list.length?'<button class="link" data-a="toggleEdit">'+(ui.editHist?'완료':'편집')+'</button>':'')+'</div>';
+  if(ui.editHist&&list.length)h+='<p class="sub" style="margin-top:-8px">지울 라운드의 삭제 버튼을 누르세요. 지운 기록은 되돌릴 수 없어요.</p>';
   if(!list.length){
     h+='<div class="empty"><p class="sub" style="font-size:15px">아직 기록한 라운드가 없어요. 첫 라운드를 시작해 보세요.</p><button class="btn" data-a="newRound" style="max-width:260px">새 라운드 시작</button></div>';
     return {html:h};
   }
   h+='<div style="display:flex;flex-direction:column;gap:8px">'+list.map(function(r){
     var t=totals(r);
-    return '<button class="row-btn" data-a="'+(r.finished?'openCard':'resumeId')+'" data-id="'+r.id+'"><span class="l"><b>'+esc(r.club)+(r.finished?'':'<span class="tag">진행 중</span>')+'</b><span class="sub">'+fmtDate(r.date)+(t.n?', '+t.n+'홀, 평균 퍼트 '+t.avg.toFixed(2):'')+'</span></span><span class="rt">'+(t.n?t.s:'-')+'</span></button>';
+    var row='<button class="row-btn" data-a="'+(ui.editHist?'noop':(r.finished?'openCard':'resumeId'))+'" data-id="'+r.id+'"><span class="l"><b>'+esc(r.club)+(r.finished?'':'<span class="tag">진행 중</span>')+'</b><span class="sub">'+fmtDate(r.date)+(t.n?', '+t.n+'홀, 평균 퍼트 '+t.avg.toFixed(2):'')+'</span></span><span class="rt">'+(t.n?t.s:'-')+'</span></button>';
+    if(!ui.editHist)return row;
+    return '<div style="display:flex;gap:8px;align-items:stretch">'+row+'<button class="chip warn" style="flex-shrink:0;padding:0 16px" data-a="delRow" data-id="'+r.id+'" aria-label="'+esc(r.club)+' '+fmtDate(r.date)+' 라운드 삭제">삭제</button></div>';
   }).join('')+'</div>';
   return {html:h};
 }
@@ -364,7 +368,7 @@ function resume(r){
 
 var actions={
   home:function(){go('home');},
-  history:function(){go('history');},
+  history:function(){ui.editHist=false;go('history');},
   newRound:function(){
     var a=activeRound();
     if(a&&!confirm('진행 중인 라운드를 끝내고 새 라운드를 시작할까요? 지금까지 기록은 저장돼요.'))return;
@@ -447,7 +451,17 @@ var actions={
     if(!confirm(r.club+' ('+fmtDate(r.date)+') 라운드를 삭제할까요? 되돌릴 수 없어요.'))return;
     db.rounds=db.rounds.filter(function(x){return x.id!==r.id;});
     if(db.activeId===r.id)db.activeId=null;
-    save();go('history');toast('라운드를 삭제했어요');
+    save();go(ui.cardFrom==='history'?'history':'home');toast('라운드를 삭제했어요');
+  },
+  toggleEdit:function(){ui.editHist=!ui.editHist;render();},
+  noop:function(){},
+  delRow:function(el){
+    var r=roundById(el.dataset.id);if(!r)return;
+    if(!confirm(r.club+' ('+fmtDate(r.date)+') 라운드를 삭제할까요? 되돌릴 수 없어요.'))return;
+    db.rounds=db.rounds.filter(function(x){return x.id!==r.id;});
+    if(db.activeId===r.id)db.activeId=null;
+    if(!db.rounds.length)ui.editHist=false;
+    save();render();toast('라운드를 삭제했어요');
   },
   'export':function(){exportData();},
   'import':function(){document.getElementById('importFile').click();}
