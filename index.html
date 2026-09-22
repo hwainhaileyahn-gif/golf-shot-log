@@ -129,10 +129,11 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function roundById(id){for(var i=0;i<db.rounds.length;i++){if(db.rounds[i].id===id)return db.rounds[i];}return null;}
 function activeRound(){return db.activeId?roundById(db.activeId):null;}
 function newHole(){return {par:null,gs:'',shots:[],putts:[],done:false};}
-function strokes(h){var n=h.shots.length+h.putts.length;h.shots.forEach(function(s){n+=s.pen||0;});return n;}
+function puttCount(h){var n=h.putts.length;h.putts.forEach(function(p){if(p.result==='컨시드')n++;});return n;}
+function strokes(h){var n=h.shots.length+puttCount(h);h.shots.forEach(function(s){n+=s.pen||0;});return n;}
 function totals(r){
   var s=0,p=0,par=0,n=0;
-  r.holes.forEach(function(h){if(h.done){s+=strokes(h);p+=h.putts.length;par+=h.par||0;n++;}});
+  r.holes.forEach(function(h){if(h.done){s+=strokes(h);p+=puttCount(h);par+=h.par||0;n++;}});
   return {s:s,p:p,par:par,n:n,avg:n?p/n:0};
 }
 function rel(d){return d===0?'E':(d>0?'+'+d:String(d));}
@@ -237,7 +238,7 @@ function vHole(){
          '<input id="f-hgs" class="field" data-bind="hole.gs" value="'+esc(gsv)+'" placeholder="예: 2.8" inputmode="decimal" style="width:96px;height:44px;text-align:center;font-weight:700"></div>';
   }
   h.putts.forEach(function(p,j){
-    var sub=[p.feel,p.dir].filter(Boolean).map(esc).join(', ');
+    var sub=[p.feel,p.dir,p.result==='컨시드'?'남은 퍼트 컨시드 +1타':''].filter(Boolean).map(esc).join(', ');
     out+='<div class="done"><span class="num">'+nums.p[j]+'</span><div class="body"><span class="t">퍼트 '+(j+1)+(p.dist?' '+esc(p.dist):'')+' → '+esc(p.result)+'</span>'+(sub?'<span class="sub">'+sub+'</span>':'')+'</div></div>';
   });
 
@@ -264,13 +265,14 @@ function vHole(){
     out+='<div class="card"><div class="card-head"><span class="num g">'+nums.next+'</span>퍼트 '+pn+'</div>'+
       '<div><label class="lbl" for="f-pd">거리 (자유 입력)</label><input id="f-pd" class="field" data-bind="draft.dist" value="'+esc(d.dist)+'" placeholder="예: 12발자국" autocomplete="off" style="height:56px;font-size:18px"></div>'+
       '<div><span class="lbl">결과</span><div class="grid g3" style="gap:8px">'+chips(PRES,'result',d.result,'big')+'</div></div>'+
+      (d.result==='컨시드'?'<p class="sub">이 퍼트 1타에 컨시드 받은 퍼트 1타가 더해져요</p>':'')+
       (d.result==='미스'?'<div class="box"><div><span class="lbl">거리감</span><div class="grid g3">'+chips(FEELS,'feel',d.feel)+'</div></div><div><span class="lbl">방향</span><div class="grid g3">'+chips(DIRS,'dir',d.dir)+'</div></div></div>':'')+
       '</div>';
     var end=d.result==='홀인'||d.result==='컨시드';
     var plabel=!d.result?'저장하기':(end?(i<17?'저장하고 홀아웃, '+(i+2)+'번홀로':'저장하고 라운드 끝내기'):'저장하고 다음 퍼트');
     if(end){
-      var preview=strokes(h)+1;
-      out+='<div class="holeout"><span class="sub" style="font-size:15px">이 홀 스코어</span><b>'+preview+'타 '+esc(scoreName({shots:h.shots,putts:h.putts.concat([{}]),par:h.par}))+'</b></div>';
+      var ph={shots:h.shots,putts:h.putts.concat([{result:d.result}]),par:h.par};
+      out+='<div class="holeout"><span class="sub" style="font-size:15px">이 홀 스코어</span><b>'+strokes(ph)+'타 '+esc(scoreName(ph))+'</b></div>';
     }
     dock=(!h.par?'<p class="hint">Par를 먼저 골라주세요</p>':(!d.result?'<p class="hint">결과를 골라주세요</p>':''))+
          '<button class="btn" data-a="savePutt"'+(d.result&&h.par?'':' disabled')+'>'+plabel+'</button>';
@@ -283,7 +285,7 @@ function scTable(r,from,to,name,sumLabel){
   var holes=r.holes.slice(from,to);
   var cells=function(fn){return holes.map(function(h,k){return '<span>'+fn(h,from+k)+'</span>';}).join('');};
   var sp=0,ss=0,spt=0,any=false;
-  holes.forEach(function(h){if(h.par)sp+=h.par;if(h.done){ss+=strokes(h);spt+=h.putts.length;any=true;}});
+  holes.forEach(function(h){if(h.par)sp+=h.par;if(h.done){ss+=strokes(h);spt+=puttCount(h);any=true;}});
   return '<div><span class="lbl">'+esc(name)+'</span><div class="sc">'+
     '<div class="r hd"><span class="rl">홀</span>'+cells(function(h,i){return i+1;})+'<span>'+sumLabel+'</span></div>'+
     '<div class="r par"><span class="rl">Par</span>'+cells(function(h){return h.par||'-';})+'<span class="tot">'+(sp||'-')+'</span></div>'+
@@ -291,7 +293,7 @@ function scTable(r,from,to,name,sumLabel){
       if(!h.done)return '-';var s=strokes(h),dd=s-(h.par||s);
       return dd<0?'<span class="under">'+s+'</span>':(dd>=2?'<span class="over2">'+s+'</span>':String(s));
     })+'<span class="tot">'+(any?ss:'-')+'</span></div>'+
-    '<div class="r pt"><span class="rl">퍼트</span>'+cells(function(h){return h.done?h.putts.length:'-';})+'<span class="tot">'+(any?spt:'-')+'</span></div>'+
+    '<div class="r pt"><span class="rl">퍼트</span>'+cells(function(h){return h.done?puttCount(h):'-';})+'<span class="tot">'+(any?spt:'-')+'</span></div>'+
     '</div></div>';
 }
 
