@@ -253,8 +253,9 @@ function vHole(){
       '<div><span class="lbl">결과 위치</span><div class="grid g3">'+chips(RESULTS,'result',d.result)+'</div></div>'+
       (d.result==='OB'?'<div class="box"><div><span class="lbl">OB 벌타</span><div class="grid g2">'+OBPEN.map(function(o){var on=d.obPen===o[0];return '<button class="chip warn'+(on?' on':'')+'" data-a="set" data-k="obPen" data-v="'+o[0]+'" aria-pressed="'+on+'">'+o[1]+'</button>';}).join('')+'</div></div></div>':'')+
       '<div><span class="lbl">방향</span><div class="grid g3">'+chips(DIRS,'dir',d.dir)+'</div></div>'+
-      '<div><label class="lbl" for="f-dist">거리 (자유 입력, 선택)</label><input id="f-dist" class="field" data-bind="draft.dist" value="'+esc(d.dist)+'" placeholder="예: 135, 150y" autocomplete="off"></div>'+
-      '<div><label class="lbl" for="f-memo">메모 (선택)</label><input id="f-memo" class="field" data-bind="draft.memo" value="'+esc(d.memo)+'" placeholder="예: 앞바람, 약간 두껍게 맞음" autocomplete="off"></div>'+
+      '<div><label class="lbl" for="f-dist">거리 (자유 입력, 선택)</label><div style="display:flex;gap:8px"><input id="f-dist" class="field" data-bind="draft.dist" value="'+esc(d.dist)+'" placeholder="예: 135, 150y" autocomplete="off">'+micBtn('dist')+'</div></div>'+
+      '<div><label class="lbl" for="f-memo">메모 (선택)</label><div style="display:flex;gap:8px"><input id="f-memo" class="field" data-bind="draft.memo" value="'+esc(d.memo)+'" placeholder="예: 앞바람, 약간 두껍게 맞음" autocomplete="off">'+micBtn('memo')+'</div></div>'+
+      (listenField?'<p class="sub">듣는 중이에요. 말이 끝나면 칸에 채워져요.</p>':'')+
       '</div>';
     var ok=h.par&&d.club&&d.result;
     var label=d.result==='홀인'?'저장하고 홀아웃':(d.result==='그린'?'저장하고 퍼트로':'저장하고 다음 샷');
@@ -263,7 +264,7 @@ function vHole(){
   }else{
     var pn=h.putts.length+1;
     out+='<div class="card"><div class="card-head"><span class="num g">'+nums.next+'</span>퍼트 '+pn+'</div>'+
-      '<div><label class="lbl" for="f-pd">거리 (자유 입력)</label><input id="f-pd" class="field" data-bind="draft.dist" value="'+esc(d.dist)+'" placeholder="예: 12발자국" autocomplete="off" style="height:56px;font-size:18px"></div>'+
+      '<div><label class="lbl" for="f-pd">거리 (자유 입력)</label><div style="display:flex;gap:8px"><input id="f-pd" class="field" data-bind="draft.dist" value="'+esc(d.dist)+'" placeholder="예: 12발자국" autocomplete="off" style="height:56px;font-size:18px">'+micBtn('dist',56)+'</div>'+(listenField?'<p class="sub" style="margin-top:8px">듣는 중이에요. 말이 끝나면 칸에 채워져요.</p>':'')+'</div>'+
       '<div><span class="lbl">결과</span><div class="grid g3" style="gap:8px">'+chips(PRES,'result',d.result,'big')+'</div></div>'+
       (d.result==='컨시드'?'<p class="sub">이 퍼트 1타에 컨시드 받은 퍼트 1타가 더해져요</p>':'')+
       (d.result==='미스'?'<div class="box"><div><span class="lbl">거리감</span><div class="grid g3">'+chips(FEELS,'feel',d.feel)+'</div></div><div><span class="lbl">방향</span><div class="grid g3">'+chips(DIRS,'dir',d.dir)+'</div></div></div>':'')+
@@ -350,7 +351,54 @@ function vBag(){
   return {html:h,dock:'<button class="btn" data-a="home">저장하고 홈으로</button>'};
 }
 
+/* ---------- 음성 입력 (거리, 메모 칸) ---------- */
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var rec=null,listenField=null;
+var KNUM={'한':1,'하나':1,'두':2,'둘':2,'세':3,'셋':3,'네':4,'넷':4,'다섯':5,'여섯':6,'일곱':7,'여덟':8,'아홉':9,'열':10,'열한':11,'열두':12,'열세':13,'열네':14,'열다섯':15,'열여섯':16,'열일곱':17,'열여덟':18,'열아홉':19,'스무':20,'스물':20};
+function cleanDist(t){
+  t=t.replace(/[.,!?]/g,'').trim();
+  var m=/(\d+)\s*(미터|m|야드|야|발자국|발|걸음|보)?/i.exec(t);
+  if(m)return m[0].replace(/\s+/g,'');
+  var keys=Object.keys(KNUM).sort(function(a,b){return b.length-a.length;});
+  for(var i=0;i<keys.length;i++){
+    var mm=new RegExp(keys[i]+'\\s*(발자국|발|걸음|보|미터|야드)').exec(t);
+    if(mm)return KNUM[keys[i]]+mm[1];
+  }
+  return t;
+}
+function voiceStart(field){
+  if(!SR){toast('이 브라우저에서는 음성 인식을 쓸 수 없어요. 칸을 탭한 뒤 키보드의 마이크 버튼으로 받아쓰기하면 돼요.');return;}
+  if(listenField){try{rec.stop();}catch(e){}return;}
+  try{
+    rec=new SR();rec.lang='ko-KR';rec.interimResults=false;rec.maxAlternatives=1;rec.continuous=false;
+    rec.onstart=function(){listenField=field;render();};
+    rec.onend=function(){listenField=null;render();};
+    rec.onerror=function(e){
+      listenField=null;
+      var msg=(e&&(e.error==='not-allowed'||e.error==='service-not-allowed'))
+        ?'마이크 사용이 거부됐어요. 설정 > Safari에서 마이크를 허용해 주세요.'
+        :'음성 인식에 실패했어요. 다시 시도하거나 키보드의 마이크 버튼을 써주세요.';
+      render();toast(msg);
+    };
+    rec.onresult=function(e){
+      var t='';
+      for(var i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;
+      t=t.trim();
+      if(!t||!ui.draft)return;
+      ui.draft[field]=field==='dist'?cleanDist(t):t.replace(/[.]$/,'');
+      render();
+    };
+    rec.start();
+  }catch(err){toast('음성 인식을 시작하지 못했어요');}
+}
+function micBtn(field,h){
+  var on=listenField===field;
+  return '<button class="chip'+(on?' on':'')+'" style="flex-shrink:0;width:'+(h||50)+'px;height:'+(h||50)+'px;padding:0;display:flex;align-items:center;justify-content:center" data-a="voice" data-k="'+field+'" aria-label="'+(field==='dist'?'거리':'메모')+' 음성으로 입력" aria-pressed="'+on+'">'+
+    (on?'<span style="font-size:13px;font-weight:700">●</span>':'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>')+'</button>';
+}
+
 /* ---------- render ---------- */
+
 var lastKey='';
 function render(){
   var v=ui.view==='bag'?vBag():ui.view==='setup'?vSetup():ui.view==='hole'?vHole():ui.view==='card'?vCard():ui.view==='history'?vHistory():vHome();
@@ -486,6 +534,7 @@ var actions={
     db.bag=cur;ui.newClub='';save();render();toast(n+' 추가했어요');
   },
   bagReset:function(){if(!confirm('기본 클럽 구성으로 되돌릴까요?'))return;db.bag=CLUBS.slice();save();render();},
+  voice:function(el){voiceStart(el.dataset.k);},
   toggleEdit:function(){ui.editHist=!ui.editHist;render();},
   noop:function(){},
   delRow:function(el){
